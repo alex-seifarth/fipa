@@ -1,12 +1,10 @@
 use fipa;
 
-
-
 #[test]
 fn test_interface_simple_1a() {
     let fidl_text = include_str!("interface1a.fidl");
 
-    let module_result = fipa::parse_module(&fidl_text);
+    let module_result = fipa::parser::parse_module(&fidl_text);
     assert!(module_result.is_ok());
 
     let (_, module) = module_result.unwrap();
