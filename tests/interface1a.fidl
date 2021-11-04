@@ -1,0 +1,8 @@
+package de.titnc.my_test.package
+
+import de.titnc.my_test.sub_package from "types.fidl"
+import model "a-very-nice-model"
+
+interface MyInterface {
+
+}
