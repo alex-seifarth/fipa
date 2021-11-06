@@ -42,6 +42,9 @@ pub struct Interface {
 
     /// version in from (major, minor)
     pub version: Option<(u32, u32)>,
+
+    /// attributes defined within the interface
+    pub attributes: Vec<Attribute>,
 }
 
 /// Type reference that may reference a custom (derived) type by its name or FQN

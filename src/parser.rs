@@ -127,6 +127,7 @@ fn parse_version(input: &str) -> IResult<&str, Option<(u32, u32)>> {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum ModuleContent {
     Interface(ast::Interface),
     TypeCollection(ast::TypeCollection)
@@ -166,6 +167,7 @@ fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
 
 fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
     let (r, v) = tuple((
+        multispace0,
         parse_annotation, tag("attribute"), multispace0, parse_type_ref, multispace0,
         option(tuple((tag("["), multispace0, tag("]")))), multispace0,
         parse_identifier, multispace0,
@@ -180,11 +182,11 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
                 }
                 // println!(" =>sp {:?}", sp);
                 sp
-            } )
+            } ), multispace0
     ))(input)?;
-    Ok(("", InterfaceContent::Attribute(ast::Attribute {
-        annotation: v.0, name: v.7.to_string(), array: v.5 != None, type_ref: v.3,
-        read_only: v.9.0, no_subscription: v.9.2, no_read: v.9.1
+    Ok((r, InterfaceContent::Attribute(ast::Attribute {
+        annotation: v.1, name: v.8.to_string(), array: v.6 != None, type_ref: v.4,
+        read_only: v.10.0, no_subscription: v.10.2, no_read: v.10.1
     })))
 }
 
@@ -192,12 +194,19 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
     let (r, v) = nom::sequence::tuple((
         parse_annotation, tag("interface"), multispace1, parse_identifier, multispace0,
         // todo extends and manages
-        tag("{"), multispace0, parse_version,
-
-        multispace0, tag("}"),
+        tag("{"), multispace0, parse_version, multispace0,
+        fold_many0( parse_attribute, || Vec::new(),
+            |mut attrs, v | {
+                match v {
+                    InterfaceContent::Attribute(attr) => attrs.push(attr),
+                    _ => {},
+                }
+                attrs
+            }),
+        multispace0, tag("}"), multispace0
     ))(input)?;
     Ok((r, ModuleContent::Interface( ast::Interface{
-        annotation: v.0, name: v.3.to_string(), version: v.7
+        annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9
     })))
 }
 
@@ -243,7 +252,7 @@ mod test {
 
     #[test]
     fn test_attribute() {
-        assert_eq!(parse_attribute("attribute Int8 my_int_8  "), Ok(("", InterfaceContent::Attribute(
+        assert_eq!(parse_attribute("attribute Int8 my_int_8  }"), Ok(("}", InterfaceContent::Attribute(
             ast::Attribute{ annotation: None, name: "my_int_8".to_string(), array: false,
                 read_only: false, no_subscription: false, no_read: false, type_ref: ast::TypeRef::Int8,
         }))));

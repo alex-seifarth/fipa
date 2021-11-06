@@ -5,4 +5,18 @@ import model "a-very-nice-model"
 
 interface MyInterface {
 
+    attribute Int8 counter readonly
+
+    attribute Boolean active
+
+    <** This is an attribute with annotation **>
+    attribute MyType[] headlines noSubscription
+}
+
+
+<** Annotation for a service **>
+
+interface VehicleStatus
+{
+    version{ major 2 minor 1 }
 }
