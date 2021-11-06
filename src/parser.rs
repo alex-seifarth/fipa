@@ -7,7 +7,7 @@ use nom::{
     IResult,
     sequence::{tuple, pair},
     branch::{alt},
-    bytes::complete::{tag, take_while, take},
+    bytes::complete::{tag, take_while, take, take_until},
     character::complete::{multispace0, multispace1, char, digit1},
     multi::{fold_many0, many0}
 };
@@ -78,13 +78,22 @@ fn parse_import_model(input: &str) -> IResult<&str, ast::Import> {
     Ok((r, ast::Import{ uri: v.5.to_string(), namespace: "".to_string()}))
 }
 
+fn parse_imported_fqn(input: &str) -> IResult<&str, String> {
+    let (r, v) = pair(parse_fqn, option( tag(".*")))(input)?;
+    if v.1.is_none() {
+        Ok((r, v.0.to_string()))
+    }
+    else {
+        Ok((r, format!("{}.*", v.0)))
+    }
+}
+
 fn parse_import_from(input: &str) -> IResult<&str, ast::Import> {
     let (r, v) = tuple((
-// todo fqn must be extended to ImportedFQN:  FQN ('.' '*')*
-        multispace0, tag("import"), multispace1, parse_fqn, multispace1,
+        multispace0, tag("import"), multispace1, parse_imported_fqn, multispace1,
         tag("from"), multispace1, parse_string,
     ))(input)?;
-    Ok((r, ast::Import{ uri: v.7.to_string(), namespace: v.3.to_string()}))
+    Ok((r, ast::Import{ uri: v.7.to_string(), namespace: v.3}))
 }
 
 /// Import : 'import' (importedNamespace=ImportedFQN 'from' | 'model') importURI=STRING;
@@ -95,11 +104,7 @@ fn parse_import(input: &str) -> IResult<&str, ast::Import> {
 /// FAnnotationBlock returns FAnnotationBlock:
 /// 	'<**' (elements+=FAnnotation)+ '**>';
 fn parse_annotation(input: &str) -> IResult<&str, Option<String>> {
-    match nom::sequence::tuple((
-        nom::bytes::complete::tag("<**"),
-        nom::bytes::complete::take_until("**>"),
-        nom::bytes::complete::tag("**>"),
-        multispace0,
+    match nom::sequence::tuple((tag("<**"), take_until("**>"), tag("**>"), multispace0,
     ))(input) as IResult<&str, (&str, &str, &str, &str)> {
         Ok((r, v))  => Ok((r, Some(v.1.to_string()))),
         Err(_)                => Ok((input, None))
@@ -115,8 +120,8 @@ fn parse_annotation(input: &str) -> IResult<&str, Option<String>> {
 fn parse_version(input: &str) -> IResult<&str, Option<(u32, u32)>> {
     match nom::sequence::tuple((
         tag("version"), multispace0, tag("{"), multispace0, tag("major"), multispace1, digit1,
-        multispace1, tag("minor"), multispace1, digit1, multispace0, tag("}")
-    ))(input) as IResult<&str, (&str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str)>  {
+        multispace1, tag("minor"), multispace1, digit1, multispace0, tag("}"), multispace0
+    ))(input) as IResult<&str, (&str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str)>  {
         Ok((r, v)) => Ok((r, Some(( v.6.parse::<u32>().unwrap(), v.10.parse::<u32>().unwrap())))),
         Err(_) => Ok((input, None))
     }
@@ -127,12 +132,66 @@ enum ModuleContent {
     TypeCollection(ast::TypeCollection)
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum InterfaceContent {
+    Attribute(ast::Attribute),
+    Method(),
+    Broadcast(),
+    Constant(),
+    Type(),
+}
+
+fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
+    // todo IntegerInterval not recognized
+    let (r, v) = parse_fqn(input)?;
+    let tr = match v.as_str() {
+        "undefined" => ast::TypeRef::Undefined,
+        "Int8" => ast::TypeRef::Int8,
+        "UInt8" => ast::TypeRef::UInt8,
+        "Int16" => ast::TypeRef::Int16,
+        "UInt16" => ast::TypeRef::UInt16,
+        "Int32" => ast::TypeRef::Int32,
+        "UInt32" => ast::TypeRef::UInt32,
+        "Int64" => ast::TypeRef::Int64,
+        "UInt64" => ast::TypeRef::UInt64,
+        "Boolean" => ast::TypeRef::Boolean,
+        "String" => ast::TypeRef::String,
+        "Float" => ast::TypeRef::Float,
+        "Double" => ast::TypeRef::Double,
+        "ByteBuffer" => ast::TypeRef::ByteBuffer,
+        _ => ast::TypeRef::Derived(v),
+    };
+    Ok((r, tr))
+}
+
+fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
+    let (r, v) = tuple((
+        parse_annotation, tag("attribute"), multispace0, parse_type_ref, multispace0,
+        option(tuple((tag("["), multispace0, tag("]")))), multispace0,
+        parse_identifier, multispace0,
+        fold_many0( alt((tag("readonly"), tag("noRead"), tag("noSubscription"), multispace1 )),
+            || (false, false, false), |mut sp, v| {
+                // println!("sp {:?} ({})", sp, v);
+                match v {
+                    "readonly" => sp.0 = true,
+                    "noRead" => sp.1 = true,
+                    "noSubscription" => sp.2 = true,
+                    _ => {},
+                }
+                // println!(" =>sp {:?}", sp);
+                sp
+            } )
+    ))(input)?;
+    Ok(("", InterfaceContent::Attribute(ast::Attribute {
+        annotation: v.0, name: v.7.to_string(), array: v.5 != None, type_ref: v.3,
+        read_only: v.9.0, no_subscription: v.9.2, no_read: v.9.1
+    })))
+}
+
 fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
     let (r, v) = nom::sequence::tuple((
-        parse_annotation, tag("interface"), multispace1,
-        parse_identifier, multispace0,
-        // todo extends
-        // todo manages
+        parse_annotation, tag("interface"), multispace1, parse_identifier, multispace0,
+        // todo extends and manages
         tag("{"), multispace0, parse_version,
 
         multispace0, tag("}"),
@@ -183,6 +242,18 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_attribute() {
+        assert_eq!(parse_attribute("attribute Int8 my_int_8  "), Ok(("", InterfaceContent::Attribute(
+            ast::Attribute{ annotation: None, name: "my_int_8".to_string(), array: false,
+                read_only: false, no_subscription: false, no_read: false, type_ref: ast::TypeRef::Int8,
+        }))));
+        assert_eq!(parse_attribute("attribute MyType[] a readonly  noSubscription  "), Ok(("", InterfaceContent::Attribute(
+            ast::Attribute{ annotation: None, name: "a".to_string(), array: true,
+                read_only: true, no_subscription: true, no_read: false, type_ref: ast::TypeRef::Derived("MyType".to_string()),
+        }))));
+    }
+
+    #[test]
     fn test_annotation() {
         assert_eq!(parse_annotation("<** an annotation \n comment with multiple \n lines **> adf" ),
                    Ok(("adf", Some(" an annotation \n comment with multiple \n lines ".to_string()))));
@@ -203,7 +274,9 @@ mod test {
         assert_eq!(parse_import(" import a.b.c from 'a_b-file.fidl'"),
                    Ok(("", ast::Import{ uri: "a_b-file.fidl".to_string(), namespace: "a.b.c".to_string()})));
         assert_eq!(parse_import(" import model   'a_b-file.fidl' \n a new line"),
-                   Ok((" \n a new line", ast::Import{ uri: "a_b-file.fidl".to_string(), namespace: String::new()})))
+                   Ok((" \n a new line", ast::Import{ uri: "a_b-file.fidl".to_string(), namespace: String::new()})));
+        assert_eq!(parse_import(" import a.b.c.* from 'a_b-file.fidl'"),
+                   Ok(("", ast::Import{ uri: "a_b-file.fidl".to_string(), namespace: "a.b.c.*".to_string()})));
     }
 
     #[test]

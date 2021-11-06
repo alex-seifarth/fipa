@@ -44,9 +44,70 @@ pub struct Interface {
     pub version: Option<(u32, u32)>,
 }
 
+/// Type reference that may reference a custom (derived) type by its name or FQN
+/// or one of the built-in types.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum TypeRef {
+    /// Custom type identified by its name or fully qualified name.
+    Derived(String),
+    Undefined,
+    Int8,
+    UInt8,
+    Int16,
+    UInt16,
+    Int32,
+    UInt32,
+    Int64,
+    UInt64,
+    Boolean,
+    String,
+    Float,
+    Double,
+    ByteBuffer,
+
+    /// Min-Max value range
+    IntegerInterval(Option<isize>, Option<isize>)
+}
+
+/// FRANCA attribute specification within an interface
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Attribute {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub array: bool,
+    pub read_only: bool,
+    pub no_subscription: bool,
+    pub no_read: bool,
+    pub type_ref: TypeRef,
+}
+
 /// FRANCA type collection specification
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeCollection {
 
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeArray {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub base_type: TypeRef
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeDef {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub base_type: TypeRef
+}
+
+
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Type {
+    TypeDef(Box<TypeDef>),
+    Array(Box<TypeArray>),
+    Enumeration{name: String, public: bool, }
+}
