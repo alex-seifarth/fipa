@@ -84,33 +84,25 @@ pub struct Attribute {
     pub type_ref: TypeRef,
 }
 
+///FField: 	(comment=FAnnotationBlock)?  type=FTypeRef (array?='[' ']')? name=ID;
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Field {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub type_ref: TypeRef,
+    pub array: bool,
+}
+
 /// FRANCA type collection specification
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeCollection {
 
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct TypeArray {
-    pub annotation: Option<String>,
-    pub name: String,
-    pub public: bool,
-    pub base_type: TypeRef
-}
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct TypeDef {
-    pub annotation: Option<String>,
-    pub name: String,
-    pub public: bool,
-    pub base_type: TypeRef
-}
-
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {
-    TypeDef(Box<TypeDef>),
-    Array(Box<TypeArray>),
+    TypeDef{ annotation: Option<String>, public: bool, name: String, array: bool, actual_type: TypeRef },
+    Array{ annotation: Option<String>, public: bool, name: String, element_type: TypeRef },
     Enumeration{name: String, public: bool, }
 }

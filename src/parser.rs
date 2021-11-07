@@ -165,11 +165,17 @@ fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
     Ok((r, tr))
 }
 
+fn parse_array_specifier(input: &str) -> IResult<&str, bool> {
+    let (r, v) = option(tuple((tag("["), multispace0, tag("]"), multispace0)))
+        (input)?;
+    Ok((r, v.is_some()))
+}
+
 fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
     let (r, v) = tuple((
         multispace0,
         parse_annotation, tag("attribute"), multispace0, parse_type_ref, multispace0,
-        option(tuple((tag("["), multispace0, tag("]")))), multispace0,
+        parse_array_specifier, multispace0,
         parse_identifier, multispace0,
         fold_many0( alt((tag("readonly"), tag("noRead"), tag("noSubscription"), multispace1 )),
             || (false, false, false), |mut sp, v| {
@@ -185,7 +191,7 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
             } ), multispace0
     ))(input)?;
     Ok((r, InterfaceContent::Attribute(ast::Attribute {
-        annotation: v.1, name: v.8.to_string(), array: v.6 != None, type_ref: v.4,
+        annotation: v.1, name: v.8.to_string(), array: v.6, type_ref: v.4,
         read_only: v.10.0, no_subscription: v.10.2, no_read: v.10.1
     })))
 }
@@ -212,7 +218,7 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
     let (r, _) = nom::sequence::tuple((
-        parse_annotation, multispace1, tag("typeCollection"), multispace0,
+        parse_annotation, tag("typeCollection"), multispace0,
         option(parse_identifier), multispace0, tag("{"), multispace0,
         tag("}")
     ))(input)?;
@@ -246,9 +252,74 @@ pub fn parse_module(input: &str) -> IResult<&str, ast::Module> {
     Ok((r, ast::Module{ package: v.1, imports: v.3, interfaces: v.5.0, type_collections: v.5.1}))
 }
 
+fn parse_field(input: &str) -> IResult<&str, ast::Field> {
+    let (r, v) = tuple((
+        parse_annotation, multispace0, parse_type_ref, multispace0, parse_array_specifier,
+        parse_identifier, multispace0
+    ))(input)?;
+    Ok((r, ast::Field{
+        annotation: v.0, array: v.4, name: v.5.to_string(), type_ref: v.2 }))
+}
+
+fn parse_typedef(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple((
+        parse_annotation, option(tag("public ")), multispace0, tag("typedef "), multispace0,
+        parse_identifier, multispace0, tag("is "), multispace0, parse_type_ref, multispace0,
+        parse_array_specifier, multispace0
+    ))(input)?;
+    Ok((r, ast::Type::TypeDef {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), actual_type: v.9, array: v.11
+    }))
+}
+
+fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple((
+        parse_annotation, option(tag("public ")), multispace0, tag("array "), multispace0,
+        parse_identifier, multispace0, tag("of "), multispace0, parse_type_ref, multispace0
+    ))(input)?;
+    Ok((r, ast::Type::Array {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), element_type: v.9
+    }))
+}
+
+
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_array_type() {
+        assert_eq!(parse_array_type("public array MyArray of UInt32  AAA"),
+                   Ok(("AAA", ast::Type::Array{annotation: None, public: true, name: "MyArray".to_string(),
+                       element_type: ast::TypeRef::UInt32})));
+        assert_eq!(parse_array_type("<** nothing \n here \n to see **>\n  array SomeArray of Boolean    AAA"),
+                   Ok(("AAA", ast::Type::Array{annotation: Some(" nothing \n here \n to see ".to_string()),
+                       public: false, name: "SomeArray".to_string(), element_type: ast::TypeRef::Boolean })));
+    }
+
+    #[test]
+    fn test_typedef() {
+        assert_eq!(parse_typedef("public typedef MyType is Int8  AAA"),
+            Ok(("AAA", ast::Type::TypeDef{annotation: None, public: true, name: "MyType".to_string(),
+                        actual_type: ast::TypeRef::Int8, array: false})));
+        assert_eq!(parse_typedef("<** nothing **>\n typedef SomeArray is Boolean [  ]  AAA"),
+                   Ok(("AAA", ast::Type::TypeDef{annotation: Some(" nothing ".to_string()),
+                       public: false, name: "SomeArray".to_string(), actual_type: ast::TypeRef::Boolean,
+                       array: true})));
+
+    }
+
+    #[test]
+    fn test_field() {
+        assert_eq!(parse_field("Boolean my_bool   "),
+                   Ok(("", ast::Field{annotation: None, name: "my_bool".to_string(), array: false, type_ref: ast::TypeRef::Boolean})));
+        assert_eq!(parse_field("UInt32[] an_array \nA"),
+                   Ok(("A", ast::Field{annotation: None, name: "an_array".to_string(), array: true, type_ref: ast::TypeRef::UInt32})));
+        assert_eq!(parse_field("<** a little comment**>\n     MyOwnType field \n"),
+                   Ok(("", ast::Field{annotation: Some(" a little comment".to_string()),
+                       name: "field".to_string(), array: false, type_ref: ast::TypeRef::Derived("MyOwnType".to_string())})));
+    }
 
     #[test]
     fn test_attribute() {
