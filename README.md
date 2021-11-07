@@ -1,6 +1,4 @@
-
-![master workflow](https://github.com/alex-seifarth/fipa/.github/workflows/rust.yml/badge.svg)
-
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/alex-seifarth/fipa/Rust)
 
 # FIPA (Franca IDL Parser)
 
