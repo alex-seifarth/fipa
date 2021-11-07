@@ -104,5 +104,7 @@ pub struct TypeCollection {
 pub enum Type {
     TypeDef{ annotation: Option<String>, public: bool, name: String, array: bool, actual_type: TypeRef },
     Array{ annotation: Option<String>, public: bool, name: String, element_type: TypeRef },
+    Struct{ annotation: Option<String>, public: bool, name: String, polymorphic: bool, extends: Option<String>, fields: Vec<Field>},
+    Union{ annotation: Option<String>, public: bool, name: String, base_type: Option<String>, fields: Vec<Field>},
     Enumeration{name: String, public: bool, }
 }

@@ -274,7 +274,7 @@ fn parse_typedef(input: &str) -> IResult<&str, ast::Type> {
 
 fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
-        parse_annotation, option(tag("public ")), multispace0, tag("array "), multispace0,
+        parse_annotation, option(tag("public ")), multispace0, tag("array"), multispace1,
         parse_identifier, multispace0, tag("of "), multispace0, parse_type_ref, multispace0
     ))(input)?;
     Ok((r, ast::Type::Array {
@@ -282,11 +282,68 @@ fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
     }))
 }
 
+fn parse_struct_type(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple((
+        parse_annotation, option(tag("public ")), multispace0, tag("struct"), multispace1,
+        parse_identifier, multispace0,
+        option( tuple((tag("extends "), parse_fqn))), multispace0,
+        option(tag("polymorphic")), multispace0,
+        tag("{"), multispace0,
+        fold_many0(parse_field, || Vec::new(),
+            |mut vec, field | { vec.push(field); vec}),
+        tag("}"), multispace0
+    ))(input)?;
+    let extend_fqn = if let Some(ex) = v.7 { Some(ex.1) } else { None };
+    Ok((r, ast::Type::Struct {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), polymorphic: v.9.is_some(),
+        extends: extend_fqn, fields: v.13
+    }))
+}
 
+fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple ((
+        parse_annotation, option(tag("public ")), multispace0, tag("union"), multispace1,
+        parse_identifier, multispace0,
+        option(tuple((tag("extends "), parse_fqn))), multispace0,
+        tag("{"), multispace0,
+        fold_many0(parse_field, || Vec::new(),
+                   |mut vec, field | { vec.push(field); vec}),
+        tag("}"), multispace0
+    ))(input)?;
+    let base = if let Some(ex) = v.7 { Some(ex.1) } else { None };
+    Ok((r, ast::Type::Union {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), base_type: base, fields: v.11
+    }))
+}
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_union_type() {
+        assert_eq!(parse_union_type("<**comment**> union A_Union extends X_Type {\n <**a**> Int32 counter \n Int64 long_counter }"),
+            Ok(("", ast::Type::Union {
+                annotation: Some("comment".to_string()), public: false, base_type: Some("X_Type".to_string()),
+                name: "A_Union".to_string(), fields: vec![
+                    ast::Field{ annotation: Some("a".to_string()), name: "counter".to_string(), array: false, type_ref: ast::TypeRef::Int32},
+                    ast::Field{ annotation: None, name: "long_counter".to_string(), array: false, type_ref: ast::TypeRef::Int64},
+                ]
+        })));
+    }
+
+    #[test]
+    fn test_struct_type() {
+        assert_eq!(parse_struct_type("public struct MyStruct {\n Int8 a\n UInt32 b String[] c} XYZ"),
+            Ok(("XYZ", ast::Type::Struct { annotation: None, public: true, name: "MyStruct".to_string(),
+                polymorphic: false, extends: None,
+                fields: vec![
+                    ast::Field{ annotation: None, name: "a".to_string(), array: false, type_ref: ast::TypeRef::Int8},
+                    ast::Field{ annotation: None, name: "b".to_string(), array: false, type_ref: ast::TypeRef::UInt32},
+                    ast::Field{ annotation: None, name: "c".to_string(), array: true, type_ref: ast::TypeRef::String},
+              ]
+        })));
+    }
 
     #[test]
     fn test_array_type() {
@@ -307,7 +364,6 @@ mod test {
                    Ok(("AAA", ast::Type::TypeDef{annotation: Some(" nothing ".to_string()),
                        public: false, name: "SomeArray".to_string(), actual_type: ast::TypeRef::Boolean,
                        array: true})));
-
     }
 
     #[test]
