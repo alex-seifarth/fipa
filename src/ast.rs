@@ -93,6 +93,16 @@ pub struct Field {
     pub array: bool,
 }
 
+/// FEnumerator returns FEnumerator:
+/// 	(comment=FAnnotationBlock)?
+/// 	name=ID ('=' value=AdditiveExpression)?
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Enumerator {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub val: Option<u64>,
+}
+
 /// FRANCA type collection specification
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeCollection {
@@ -106,5 +116,6 @@ pub enum Type {
     Array{ annotation: Option<String>, public: bool, name: String, element_type: TypeRef },
     Struct{ annotation: Option<String>, public: bool, name: String, polymorphic: bool, extends: Option<String>, fields: Vec<Field>},
     Union{ annotation: Option<String>, public: bool, name: String, base_type: Option<String>, fields: Vec<Field>},
-    Enumeration{name: String, public: bool, }
+    Map{ annotation: Option<String>, public: bool, name: String, key_type: TypeRef, value_type: TypeRef},
+    Enumeration{ annotation: Option<String>, name: String, public: bool, base_type: Option<TypeRef>, enumerators: Vec<Enumerator>}
 }

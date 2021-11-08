@@ -7,13 +7,14 @@ use nom::{
     IResult,
     sequence::{tuple, pair},
     branch::{alt},
-    bytes::complete::{tag, take_while, take, take_until},
-    character::complete::{multispace0, multispace1, char, digit1},
-    multi::{fold_many0, many0}
+    bytes::complete::{tag, take_while, take, take_until, take_while1},
+    character::complete::{multispace0, multispace1, char, digit1, hex_digit1},
+    multi::{fold_many0, fold_many1, many0}
 };
 use super::util::option;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::str::FromStr;
 
 use super::ast;
 
@@ -316,9 +317,119 @@ fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
     }))
 }
 
+fn parse_map_type(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple((
+        parse_annotation, option(tag("public ")), multispace0, tag("map"), multispace1,
+        parse_identifier, multispace0, tag("{"), multispace0, parse_type_ref, multispace0,
+        tag("to"), multispace0, parse_type_ref, multispace0, tag("}"), multispace0
+    ))(input)?;
+    Ok((r, ast::Type::Map {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), key_type: v.9, value_type: v.13
+    }))
+}
+
+fn parse_integer_decimal(input: &str) -> IResult<&str, u64> {
+    let (r, v) = tuple( (digit1, multispace0) )(input)?;
+    Ok((r, u64::from_str(v.0).unwrap()))
+}
+
+fn parse_integer_hex(input: &str) -> IResult<&str, u64> {
+    let (r, v) = tuple( (alt((tag("0x"), tag("0X"))), hex_digit1, multispace0))(input) ?;
+    Ok((r, u64::from_str_radix(v.1, 16).unwrap()))
+}
+
+fn parse_integer_bin(input: &str) -> IResult<&str, u64> {
+    let is_bin_digit = |c: char| { c == '0' || c == '1'};
+    let (r, v) = tuple((alt((tag("0b"), tag("0B"))), take_while1(is_bin_digit),
+        multispace0))(input)?;
+    Ok((r, u64::from_str_radix(v.1, 2).unwrap()))
+}
+
+fn parse_integer(input: &str) -> IResult<&str, u64> {
+    let (r, v) = alt((parse_integer_hex, parse_integer_bin, parse_integer_decimal))(input)?;
+    Ok((r, v))
+}
+
+fn parse_enumerator(input: &str) -> IResult<&str, ast::Enumerator> {
+    let (r, v) = tuple((parse_annotation, multispace0, parse_identifier, multispace0,
+        option( tuple(( tag("="), multispace0, parse_integer)) ), multispace0
+    ))(input)?;
+    let value = if let Some(val) = v.4 { Some(val.2) } else { None };
+    Ok((r, ast::Enumerator{ annotation: v.0, name: v.2.to_string(), val: value }))
+}
+
+fn parse_enumeration(input: &str) -> IResult<&str, ast::Type> {
+    let (r, v) = tuple((parse_annotation, option(tag("public ")),  multispace0,
+        tag("enumeration"), multispace1, parse_identifier, multispace0,
+        option(tuple((tag("extends "), parse_type_ref))), multispace0, tag("{"), multispace0,
+        fold_many1( tuple((parse_enumerator, option(tag(","))) ) , || Vec::new(),
+            |mut vec, item| {
+                vec.push(item.0);
+                vec
+        }),
+        multispace0, tag("}"), multispace0
+    ))(input)?;
+    let extension = if let Some(ex) = v.7 {Some(ex.1)} else {None};
+    Ok((r, ast::Type::Enumeration {
+        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), base_type: extension,
+        enumerators: v.11
+    }))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_enumeration() {
+        assert_eq!(parse_enumeration("public enumeration MyEnum { A=1 B=100, C D }"),
+            Ok(("", ast::Type::Enumeration {annotation: None, public: true, name: "MyEnum".to_string(),
+                base_type: None, enumerators: vec![
+                    ast::Enumerator{ annotation: None, name: "A".to_string(), val: Some(1) },
+                    ast::Enumerator{ annotation: None, name: "B".to_string(), val: Some(100) },
+                    ast::Enumerator{ annotation: None, name: "C".to_string(), val: None },
+                    ast::Enumerator{ annotation: None, name: "D".to_string(), val: None },
+                ]
+        })));
+    }
+
+    #[test]
+    fn test_enumerator() {
+        assert_eq!(parse_enumerator(" enum_value_1 "), Ok(("", ast::Enumerator{
+            annotation: None, name: "enum_value_1".to_string(), val: None })));
+        assert_eq!(parse_enumerator("<** some comment **>\n SIGNAL_UNBEFUELLT = 0x12"), Ok(("", ast::Enumerator {
+            annotation: Some(" some comment ".to_string()), name: "SIGNAL_UNBEFUELLT".to_string(), val: Some(0x12u64) })));
+    }
+
+    #[test]
+    fn test_integer_decimal() {
+        assert_eq!(parse_integer_decimal("1234"), Ok(("", 1234u64)));
+        assert_eq!(parse_integer_decimal("0"), Ok(("", 0u64)));
+        assert_eq!(parse_integer_decimal("65535"), Ok(("", 0xffffu64)));
+    }
+
+    #[test]
+    fn test_integer_hex() {
+        assert_eq!(parse_integer_hex("0x1234"), Ok(("", 0x1234u64)));
+        assert_eq!(parse_integer_hex("0X0"), Ok(("", 0u64)));
+        assert_eq!(parse_integer_hex("0xffffffff"), Ok(("", 0xffffffffu64)));
+    }
+
+    #[test]
+    fn test_integer_binary() {
+        assert_eq!(parse_integer_bin("0b1101"), Ok(("", 13u64)));
+        assert_eq!(parse_integer_bin("0B11110001"), Ok(("", 0xf1u64)));
+        assert_eq!(parse_integer_bin("0b0"), Ok(("", 0)));
+    }
+
+    #[test]
+    fn test_map_type() {
+        assert_eq!(parse_map_type("public map myMap { type_x to Boolean }"),
+            Ok(("", ast::Type::Map {
+                annotation: None, public: true, name: "myMap".to_string(),
+                key_type: ast::TypeRef::Derived("type_x".to_string()), value_type: ast::TypeRef::Boolean
+        })));
+    }
 
     #[test]
     fn test_union_type() {
