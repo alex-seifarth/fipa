@@ -106,7 +106,17 @@ pub struct Enumerator {
 /// FRANCA type collection specification
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeCollection {
+    /// Optional annotation associated with the interface
+    pub annotation: Option<String>,
 
+    /// name of the interface - must be unique within a package/module
+    pub name: Option<String>,
+
+    /// version in from (major, minor)
+    pub version: Option<(u32, u32)>,
+
+    /// Types defined within this type collection
+    pub types: Vec<Type>,
 }
 
 

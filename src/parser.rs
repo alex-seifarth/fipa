@@ -20,8 +20,8 @@ use super::ast;
 
 /// 'package' name=FQN
 fn parse_package(input: &str) -> IResult<&str, String> {
-    match tuple((multispace0, tag("package"), multispace0, parse_fqn))(input) {
-        Ok((rem, (_ws1, _tag, _ws2, fqn))) => Ok((rem, fqn)),
+    match tuple((multispace0, tag("package"), multispace0, parse_fqn, multispace0))(input) {
+        Ok((rem, (_ws1, _tag, _ws2, fqn, _))) => Ok((rem, fqn)),
         Err(err) => Err(err),
     }
 }
@@ -218,15 +218,17 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
-    let (r, _) = nom::sequence::tuple((
+    let (r, v) = nom::sequence::tuple((
         parse_annotation, tag("typeCollection"), multispace0,
-        option(parse_identifier), multispace0, tag("{"), multispace0,
-        tag("}")
-    ))(input)?;
+        option(parse_identifier), multispace0, tag("{"), multispace0, parse_version, multispace0,
+        fold_many0(parse_type, || Vec::new(),
+        |mut vec, item| { vec.push(item); vec }),
+        multispace0, tag("}"), multispace0)
+    )(input)?;
+    let name = if let Some(str_name) = v.3 { Some(str_name.to_string())} else {None};
     Ok((r, ModuleContent::TypeCollection(
-        ast:: TypeCollection{
-
-        })))
+        ast:: TypeCollection{ annotation: v.0, name, version: v.7, types: v.9
+    })))
 }
 
 /// FModel returns FModel:
@@ -376,9 +378,26 @@ fn parse_enumeration(input: &str) -> IResult<&str, ast::Type> {
     }))
 }
 
+fn parse_type(input: &str) ->  IResult<&str, ast::Type> {
+    alt((parse_typedef, parse_array_type, parse_struct_type, parse_union_type, parse_map_type,
+        parse_enumeration))(input)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_type_collection() {
+        assert_eq!(parse_type_collection("typeCollection my_type_collection {}"),
+            Ok(("", ModuleContent::TypeCollection( ast::TypeCollection{
+                annotation: None, name: Some("my_type_collection".to_string()), version: None, types: Vec::new()
+            }))));
+        assert_eq!(parse_type_collection("typeCollection my_type_collection { version{ major 1 minor 100}}"),
+           Ok(("", ModuleContent::TypeCollection( ast::TypeCollection{
+               annotation: None, name: Some("my_type_collection".to_string()), version: Some((1, 100)), types: Vec::new()
+           }))));
+    }
 
     #[test]
     fn test_enumeration() {
@@ -590,7 +609,7 @@ mod test {
     #[test]
     fn test_package_ok() {
         assert_eq!(parse_package("  package    my.package"), Ok(("", "my.package".to_string())));
-        assert_eq!(parse_package("package ^anew.package.p01\nrubbish"), Ok(("\nrubbish", "^anew.package.p01".to_string())));
+        assert_eq!(parse_package("package ^anew.package.p01\nrubbish"), Ok(("rubbish", "^anew.package.p01".to_string())));
     }
 
     #[test]

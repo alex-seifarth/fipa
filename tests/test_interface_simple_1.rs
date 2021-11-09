@@ -64,6 +64,4 @@ fn test_interface_simple_1a() {
     assert_eq!(vehicle_status.name, "VehicleStatus");
     assert_eq!(vehicle_status.version, Some((2, 1)));
     assert_eq!(vehicle_status.attributes.len(), 0);
-
-
 }

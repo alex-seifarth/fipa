@@ -1,0 +1,31 @@
+package de.titnc.fidl_test
+
+typeCollection MyTypeCollection {
+    version { major 2 minor 14 }
+
+    public typedef Byte is UInt8
+
+    <** an array of int's **>
+    public array IntArray of Int8
+
+    public struct AStruct {
+        Byte a_single_byte
+        Boolean flag
+        String explanation
+    }
+
+    public enumeration Status {
+        NO_SIGNAL,
+        VALUE_1,
+        SIGNAL_UNBEFUELLT = 0x0f,
+    }
+
+
+}
+
+<** an 'anonymous' type collection **>
+typeCollection {
+
+
+
+}
