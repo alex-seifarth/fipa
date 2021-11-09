@@ -45,6 +45,9 @@ pub struct Interface {
 
     /// attributes defined within the interface
     pub attributes: Vec<Attribute>,
+
+    /// types defined within the interface
+    pub types: Vec<Type>
 }
 
 /// Type reference that may reference a custom (derived) type by its name or FQN

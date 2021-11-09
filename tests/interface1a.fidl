@@ -11,6 +11,7 @@ interface MyInterface {
 
     <** This is an attribute with annotation **>
     attribute MyType[] headlines noSubscription
+
 }
 
 
@@ -19,4 +20,14 @@ interface MyInterface {
 interface VehicleStatus
 {
     version{ major 2 minor 1 }
+
+    typedef Flag is Boolean
+
+    public enumeration FesMode {
+        SPORT_INDIVIDUAL = 1
+        COMFORT          = 2
+        ECO              = 4
+    }
+
+    attribute FesMode actualFesMode readonly
 }

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // Author: Alexander Seifarth
+
 use nom::{
     IResult,
     sequence::{tuple, pair},
@@ -54,8 +55,6 @@ fn parse_string(input: &str) -> IResult<&str, String> {
     nom::branch::alt((quoted_string('"'), quoted_string('\'') ))(input)
 }
 
-/// Parses a FQN (Fully Qualified Name).
-/// FQN: ID ('.' ID)*;
 fn parse_fqn(input: &str) -> IResult<&str, String> {
     match nom::sequence::pair(parse_identifier,
                               many0(pair(tag("."), parse_identifier))
@@ -97,13 +96,10 @@ fn parse_import_from(input: &str) -> IResult<&str, ast::Import> {
     Ok((r, ast::Import{ uri: v.7.to_string(), namespace: v.3}))
 }
 
-/// Import : 'import' (importedNamespace=ImportedFQN 'from' | 'model') importURI=STRING;
 fn parse_import(input: &str) -> IResult<&str, ast::Import> {
     alt((parse_import_from, parse_import_model))(input)
 }
 
-/// FAnnotationBlock returns FAnnotationBlock:
-/// 	'<**' (elements+=FAnnotation)+ '**>';
 fn parse_annotation(input: &str) -> IResult<&str, Option<String>> {
     match nom::sequence::tuple((tag("<**"), take_until("**>"), tag("**>"), multispace0,
     ))(input) as IResult<&str, (&str, &str, &str, &str)> {
@@ -112,12 +108,6 @@ fn parse_annotation(input: &str) -> IResult<&str, Option<String>> {
     }
 }
 
-/// 'version' FVersion returns FVersion:
-/// 	{FVersion}
-/// 	'{'
-/// 		'major' major=INT
-/// 		'minor' minor=INT
-///     '}';
 fn parse_version(input: &str) -> IResult<&str, Option<(u32, u32)>> {
     match nom::sequence::tuple((
         tag("version"), multispace0, tag("{"), multispace0, tag("major"), multispace1, digit1,
@@ -140,7 +130,7 @@ enum InterfaceContent {
     Method(),
     Broadcast(),
     Constant(),
-    Type(),
+    Type(ast::Type),
 }
 
 fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
@@ -193,8 +183,7 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
     ))(input)?;
     Ok((r, InterfaceContent::Attribute(ast::Attribute {
         annotation: v.1, name: v.8.to_string(), array: v.6, type_ref: v.4,
-        read_only: v.10.0, no_subscription: v.10.2, no_read: v.10.1
-    })))
+        read_only: v.10.0, no_subscription: v.10.2, no_read: v.10.1 })))
 }
 
 fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
@@ -202,19 +191,20 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
         parse_annotation, tag("interface"), multispace1, parse_identifier, multispace0,
         // todo extends and manages
         tag("{"), multispace0, parse_version, multispace0,
-        fold_many0( parse_attribute, || Vec::new(),
-            |mut attrs, v | {
+        fold_many0( alt((parse_attribute, parse_type_interf)), || (Vec::new(), Vec::new()),
+            |(mut attrs, mut types), v | {
                 match v {
                     InterfaceContent::Attribute(attr) => attrs.push(attr),
+                    InterfaceContent::Type(tp) => types.push(tp),
                     _ => {},
                 }
-                attrs
+                (attrs, types)
             }),
         multispace0, tag("}"), multispace0
     ))(input)?;
-    Ok((r, ModuleContent::Interface( ast::Interface{
-        annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9
-    })))
+    Ok((r, ModuleContent::Interface(
+        ast::Interface{ annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9.0,
+            types: v.9.1})))
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
@@ -227,15 +217,9 @@ fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
     )(input)?;
     let name = if let Some(str_name) = v.3 { Some(str_name.to_string())} else {None};
     Ok((r, ModuleContent::TypeCollection(
-        ast:: TypeCollection{ annotation: v.0, name, version: v.7, types: v.9
-    })))
+        ast:: TypeCollection{ annotation: v.0, name, version: v.7, types: v.9 })))
 }
 
-/// FModel returns FModel:
-/// 	{FModel}
-/// 	'package' name=FQN
-/// 	(imports+=Import)*
-/// 	( typeCollections+=FTypeCollection | interfaces+=FInterface	)*;
 pub fn parse_module(input: &str) -> IResult<&str, ast::Module> {
     let (r, v) = nom::sequence::tuple((
         multispace0, parse_package, multispace0,
@@ -270,9 +254,8 @@ fn parse_typedef(input: &str) -> IResult<&str, ast::Type> {
         parse_identifier, multispace0, tag("is "), multispace0, parse_type_ref, multispace0,
         parse_array_specifier, multispace0
     ))(input)?;
-    Ok((r, ast::Type::TypeDef {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), actual_type: v.9, array: v.11
-    }))
+    Ok((r, ast::Type::TypeDef { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
+        actual_type: v.9, array: v.11 }))
 }
 
 fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
@@ -280,9 +263,8 @@ fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
         parse_annotation, option(tag("public ")), multispace0, tag("array"), multispace1,
         parse_identifier, multispace0, tag("of "), multispace0, parse_type_ref, multispace0
     ))(input)?;
-    Ok((r, ast::Type::Array {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), element_type: v.9
-    }))
+    Ok((r, ast::Type::Array { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
+        element_type: v.9 }))
 }
 
 fn parse_struct_type(input: &str) -> IResult<&str, ast::Type> {
@@ -299,8 +281,7 @@ fn parse_struct_type(input: &str) -> IResult<&str, ast::Type> {
     let extend_fqn = if let Some(ex) = v.7 { Some(ex.1) } else { None };
     Ok((r, ast::Type::Struct {
         annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), polymorphic: v.9.is_some(),
-        extends: extend_fqn, fields: v.13
-    }))
+        extends: extend_fqn, fields: v.13 }))
 }
 
 fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
@@ -314,9 +295,8 @@ fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
         tag("}"), multispace0
     ))(input)?;
     let base = if let Some(ex) = v.7 { Some(ex.1) } else { None };
-    Ok((r, ast::Type::Union {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), base_type: base, fields: v.11
-    }))
+    Ok((r, ast::Type::Union { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
+        base_type: base, fields: v.11 }))
 }
 
 fn parse_map_type(input: &str) -> IResult<&str, ast::Type> {
@@ -325,9 +305,8 @@ fn parse_map_type(input: &str) -> IResult<&str, ast::Type> {
         parse_identifier, multispace0, tag("{"), multispace0, parse_type_ref, multispace0,
         tag("to"), multispace0, parse_type_ref, multispace0, tag("}"), multispace0
     ))(input)?;
-    Ok((r, ast::Type::Map {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), key_type: v.9, value_type: v.13
-    }))
+    Ok((r, ast::Type::Map { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
+        key_type: v.9, value_type: v.13 }))
 }
 
 fn parse_integer_decimal(input: &str) -> IResult<&str, u64> {
@@ -367,20 +346,23 @@ fn parse_enumeration(input: &str) -> IResult<&str, ast::Type> {
         fold_many1( tuple((parse_enumerator, option(tag(","))) ) , || Vec::new(),
             |mut vec, item| {
                 vec.push(item.0);
-                vec
-        }),
+                vec }),
         multispace0, tag("}"), multispace0
     ))(input)?;
     let extension = if let Some(ex) = v.7 {Some(ex.1)} else {None};
     Ok((r, ast::Type::Enumeration {
         annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), base_type: extension,
-        enumerators: v.11
-    }))
+        enumerators: v.11 }))
 }
 
 fn parse_type(input: &str) ->  IResult<&str, ast::Type> {
     alt((parse_typedef, parse_array_type, parse_struct_type, parse_union_type, parse_map_type,
         parse_enumeration))(input)
+}
+
+fn parse_type_interf(input: &str) -> IResult<&str, InterfaceContent> {
+    let (r, v) = parse_type(input)?;
+    Ok((r, InterfaceContent::Type(v)))
 }
 
 #[cfg(test)]
