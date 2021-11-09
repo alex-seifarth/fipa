@@ -80,4 +80,13 @@ fn test_interface_simple_1a() {
             fipa::ast::Enumerator{ annotation: None, name: "COMFORT".to_string(), val: Some(2) },
             fipa::ast::Enumerator{ annotation: None, name: "ECO".to_string(), val: Some(4) },
     ] });
+
+    assert_eq!(vehicle_status.broadcasts.len(), 1);
+    assert_eq!(vehicle_status.broadcasts[0], fipa::ast::Broadcast{
+        annotation: Some(" a pure event -> broadcast\n    ".to_string()), selector: None, selective: false,
+        name: "ZeroEmmissionZoneBorder".to_string(), out_args: vec![
+            fipa::ast::Argument{ annotation: None, array: false, name: "zoneEntered".to_string(), type_ref: fipa::ast::TypeRef::Boolean},
+            fipa::ast::Argument{ annotation: None, array: false, name: "zoneID".to_string(), type_ref: fipa::ast::TypeRef::Int8 },
+        ]
+    });
 }

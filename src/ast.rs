@@ -47,7 +47,10 @@ pub struct Interface {
     pub attributes: Vec<Attribute>,
 
     /// types defined within the interface
-    pub types: Vec<Type>
+    pub types: Vec<Type>,
+
+    /// broadcasts defined within this interface
+    pub broadcasts: Vec<Broadcast>,
 }
 
 /// Type reference that may reference a custom (derived) type by its name or FQN
@@ -87,6 +90,17 @@ pub struct Attribute {
     pub type_ref: TypeRef,
 }
 
+/// {FBroadcast} (comment=FAnnotationBlock)?
+/// 'broadcast' name=ID (':' selector=ID)? (selective?='selective')? '{' ('out' '{' (outArgs+=FArgument)* '}' )? '}';
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Broadcast {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub selector: Option<String>,
+    pub selective: bool,
+    pub out_args: Vec<Argument>,
+}
+
 ///FField: 	(comment=FAnnotationBlock)?  type=FTypeRef (array?='[' ']')? name=ID;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Field {
@@ -94,6 +108,15 @@ pub struct Field {
     pub name: String,
     pub type_ref: TypeRef,
     pub array: bool,
+}
+
+///FArgument: (comment=FAnnotationBlock)? type=FTypeRef (array?='[' ']')? name=ID;
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Argument {
+    pub annotation: Option<String>,
+    pub type_ref: TypeRef,
+    pub array: bool,
+    pub name: String,
 }
 
 /// FEnumerator returns FEnumerator:
@@ -121,7 +144,6 @@ pub struct TypeCollection {
     /// Types defined within this type collection
     pub types: Vec<Type>,
 }
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Type {

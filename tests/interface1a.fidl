@@ -30,4 +30,13 @@ interface VehicleStatus
     }
 
     attribute FesMode actualFesMode readonly
+
+    <** a pure event -> broadcast
+    **>
+    broadcast ZeroEmmissionZoneBorder {
+        out {
+            Boolean zoneEntered
+            Int8 zoneID
+        }
+    }
 }

@@ -128,8 +128,8 @@ enum ModuleContent {
 enum InterfaceContent {
     Attribute(ast::Attribute),
     Method(),
-    Broadcast(),
-    Constant(),
+    Broadcast(ast::Broadcast),
+   // Constant(),
     Type(ast::Type),
 }
 
@@ -191,20 +191,22 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
         parse_annotation, tag("interface"), multispace1, parse_identifier, multispace0,
         // todo extends and manages
         tag("{"), multispace0, parse_version, multispace0,
-        fold_many0( alt((parse_attribute, parse_type_interf)), || (Vec::new(), Vec::new()),
-            |(mut attrs, mut types), v | {
+        fold_many0( alt((parse_attribute, parse_type_interf, parse_broadcast)),
+                    || (Vec::new(), Vec::new(), Vec::new()),
+            |(mut attrs, mut types, mut brdcsts), v | {
                 match v {
                     InterfaceContent::Attribute(attr) => attrs.push(attr),
                     InterfaceContent::Type(tp) => types.push(tp),
+                    InterfaceContent::Broadcast(bc) => brdcsts.push(bc),
                     _ => {},
                 }
-                (attrs, types)
+                (attrs, types, brdcsts)
             }),
         multispace0, tag("}"), multispace0
     ))(input)?;
     Ok((r, ModuleContent::Interface(
         ast::Interface{ annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9.0,
-            types: v.9.1})))
+            types: v.9.1, broadcasts: v.9.2})))
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
@@ -247,6 +249,16 @@ fn parse_field(input: &str) -> IResult<&str, ast::Field> {
     Ok((r, ast::Field{
         annotation: v.0, array: v.4, name: v.5.to_string(), type_ref: v.2 }))
 }
+
+fn parse_argument(input: &str) -> IResult<&str, ast::Argument> {
+    let (r, v) = tuple((
+        parse_annotation, multispace0, parse_type_ref, multispace0, parse_array_specifier,
+        parse_identifier, multispace0
+    ))(input)?;
+    Ok((r, ast::Argument {
+        annotation: v.0, array: v.4, name: v.5.to_string(), type_ref: v.2 }))
+}
+
 
 fn parse_typedef(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
@@ -365,9 +377,44 @@ fn parse_type_interf(input: &str) -> IResult<&str, InterfaceContent> {
     Ok((r, InterfaceContent::Type(v)))
 }
 
+fn parse_argument_list(input: &str) -> IResult<&str, Vec<ast::Argument>> {
+    fold_many0(tuple((parse_argument, multispace0 )), || Vec::new(),
+        |mut vec, item| { vec.push(item.0); vec })(input)
+}
+
+fn parse_broadcast(input: &str) -> IResult<&str, InterfaceContent> {
+    let (r, v) = tuple((
+        parse_annotation, tag("broadcast"), multispace1, parse_identifier, multispace0,
+        option(tuple(( tag(":"), multispace0, parse_identifier))), multispace0,
+        option(tuple((tag("selective"), multispace0))), tag("{"), multispace0,
+        option(tuple ((tag("out"), multispace0, tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
+        multispace0, tag("}"), multispace0
+    ))(input)?;
+    let slctr = if let Some(slc) = v.5 { Some(slc.2.to_string()) } else { None };
+    let args = if let Some(ag) = v.10 { ag.4 } else { Vec::new() };
+    Ok((r, InterfaceContent::Broadcast(ast::Broadcast{
+        annotation: v.0, name: v.3.to_string(), selector: slctr, selective: v.7.is_some(), out_args: args
+    })))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_broadcast() {
+        assert_eq!(parse_broadcast("broadcast SignalA{ }"), Ok(("", InterfaceContent::Broadcast(
+            ast::Broadcast{ annotation: None, selective: false, selector: None, name: "SignalA".to_string(),
+                out_args: Vec::new()}))));
+        assert_eq!(parse_broadcast("broadcast SignalB selective { out{ Int8[] a Boolean b} }"),
+           Ok(("", InterfaceContent::Broadcast( ast::Broadcast{
+               annotation: None, selective: true, selector: None, name: "SignalB".to_string(),
+                out_args: vec![
+                    ast::Argument{ annotation: None, name: "a".to_string(), array: true, type_ref: ast::TypeRef::Int8},
+                    ast::Argument{ annotation: None, name: "b".to_string(), array: false, type_ref: ast::TypeRef::Boolean},
+                ]
+       }))));
+    }
 
     #[test]
     fn test_type_collection() {
@@ -486,6 +533,17 @@ mod test {
                    Ok(("A", ast::Field{annotation: None, name: "an_array".to_string(), array: true, type_ref: ast::TypeRef::UInt32})));
         assert_eq!(parse_field("<** a little comment**>\n     MyOwnType field \n"),
                    Ok(("", ast::Field{annotation: Some(" a little comment".to_string()),
+                       name: "field".to_string(), array: false, type_ref: ast::TypeRef::Derived("MyOwnType".to_string())})));
+    }
+
+    #[test]
+    fn test_argument() {
+        assert_eq!(parse_argument("Boolean my_bool   "),
+                   Ok(("", ast::Argument{ annotation: None, name: "my_bool".to_string(), array: false, type_ref: ast::TypeRef::Boolean})));
+        assert_eq!(parse_argument("UInt32[] an_array \nA"),
+                   Ok(("A", ast::Argument{ annotation: None, name: "an_array".to_string(), array: true, type_ref: ast::TypeRef::UInt32})));
+        assert_eq!(parse_argument("<** a little comment**>\n     MyOwnType field \n"),
+                   Ok(("", ast::Argument{ annotation: Some(" a little comment".to_string()),
                        name: "field".to_string(), array: false, type_ref: ast::TypeRef::Derived("MyOwnType".to_string())})));
     }
 
