@@ -39,4 +39,11 @@ interface VehicleStatus
             Int8 zoneID
         }
     }
+
+    method setActiveStatistics fireAndForget {
+        in {
+            StatisticsType activeStatistics
+            Boolean resetStatistics
+        }
+    }
 }

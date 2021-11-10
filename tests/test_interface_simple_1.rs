@@ -89,4 +89,16 @@ fn test_interface_simple_1a() {
             fipa::ast::Argument{ annotation: None, array: false, name: "zoneID".to_string(), type_ref: fipa::ast::TypeRef::Int8 },
         ]
     });
+
+    assert_eq!(vehicle_status.methods.len(), 1);
+    assert_eq!(vehicle_status.methods[0], fipa::ast::Method {
+        annotation: None, name: "setActiveStatistics".to_string(), fire_and_forget: true, selector: None,
+        in_args: vec![
+            fipa::ast::Argument{annotation: None, name: "activeStatistics".to_string(), array: false,
+                type_ref: fipa::ast::TypeRef::Derived("StatisticsType".to_string())},
+            fipa::ast::Argument{annotation: None, name: "resetStatistics".to_string(), array: false,
+                type_ref: fipa::ast::TypeRef::Boolean}
+        ],
+        out_args: Vec::new(), error: None
+    });
 }

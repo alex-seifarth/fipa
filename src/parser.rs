@@ -127,7 +127,7 @@ enum ModuleContent {
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum InterfaceContent {
     Attribute(ast::Attribute),
-    Method(),
+    Method(ast::Method),
     Broadcast(ast::Broadcast),
    // Constant(),
     Type(ast::Type),
@@ -191,22 +191,22 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
         parse_annotation, tag("interface"), multispace1, parse_identifier, multispace0,
         // todo extends and manages
         tag("{"), multispace0, parse_version, multispace0,
-        fold_many0( alt((parse_attribute, parse_type_interf, parse_broadcast)),
-                    || (Vec::new(), Vec::new(), Vec::new()),
-            |(mut attrs, mut types, mut brdcsts), v | {
+        fold_many0( alt((parse_attribute, parse_type_interf, parse_broadcast, parse_method)),
+                    || (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+            |(mut attrs, mut types, mut brdcsts, mut mthds), v | {
                 match v {
                     InterfaceContent::Attribute(attr) => attrs.push(attr),
                     InterfaceContent::Type(tp) => types.push(tp),
                     InterfaceContent::Broadcast(bc) => brdcsts.push(bc),
-                    _ => {},
+                    InterfaceContent::Method(mth) => mthds.push(mth)
                 }
-                (attrs, types, brdcsts)
+                (attrs, types, brdcsts, mthds)
             }),
         multispace0, tag("}"), multispace0
     ))(input)?;
     Ok((r, ModuleContent::Interface(
         ast::Interface{ annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9.0,
-            types: v.9.1, broadcasts: v.9.2})))
+            types: v.9.1, broadcasts: v.9.2, methods: v.9.3})))
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
@@ -367,6 +367,46 @@ fn parse_enumeration(input: &str) -> IResult<&str, ast::Type> {
         enumerators: v.11 }))
 }
 
+fn parse_error_enum_body(input: &str) -> IResult<&str, ast::MethodErrorSpec> {
+    let (r, v) = tuple((
+        parse_annotation, multispace0, tag("error"), multispace1,
+        option(tuple((tag("extends "), parse_type_ref))), multispace0, tag("{"), multispace0,
+        fold_many1( tuple((parse_enumerator, option(tag(","))) ) , || Vec::new(),
+                    |mut vec, item| {
+                        vec.push(item.0);
+                        vec }),
+        multispace0, tag("}"), multispace0
+    ))(input)?;
+    let extension = if let Some(ex) = v.4 {Some(ex.1)} else {None};
+    Ok((r, ast::MethodErrorSpec::EnumerationBody { annotation: v.0, extends: extension,
+        enumerators: v.8}))
+}
+
+fn parse_error_ref(input: &str) -> IResult<&str, ast::MethodErrorSpec> {
+    let (r, v) = tuple(( parse_annotation, multispace0, tag("error"), multispace1, parse_fqn,
+                         multispace0))(input)?;
+    Ok((r, ast::MethodErrorSpec::Reference {annotation: v.0, fqn: v.4.to_string() }))
+}
+
+fn parse_method(input: &str) -> IResult<&str, InterfaceContent> {
+    let (r, v) = tuple((
+        parse_annotation, multispace0, tag("method"), multispace1, parse_identifier, multispace0,
+        option(tuple(( tag(":"), multispace0, parse_identifier))), multispace0,
+        option(tag("fireAndForget")), multispace0, tag("{"), multispace0,
+        option(tuple ((tag("in"), multispace0, tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
+        option(tuple ((tag("out"), multispace0, tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
+        option(alt((parse_error_ref, parse_error_enum_body))),
+        multispace0, tag("}"), multispace0
+    ))(input)?;
+    let slctr = if let Some(s) = v.6 { Some(s.2.to_string()) } else { None };
+    let in_args = if let Some(ag) = v.12 { ag.4 } else { Vec::new() };
+    let out_args = if let Some(ag) = v.13 { ag.4 } else { Vec::new() };
+
+    Ok((r, InterfaceContent::Method( ast::Method {
+        annotation: v.0, name: v.4.to_string(), selector: slctr, fire_and_forget: v.8.is_some(),
+        in_args, out_args, error: v.14 })))
+}
+
 fn parse_type(input: &str) ->  IResult<&str, ast::Type> {
     alt((parse_typedef, parse_array_type, parse_struct_type, parse_union_type, parse_map_type,
         parse_enumeration))(input)
@@ -400,6 +440,39 @@ fn parse_broadcast(input: &str) -> IResult<&str, InterfaceContent> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_method() {
+        assert_eq!(parse_method("method resetHistory fireAndForget {}"),
+            Ok(("", InterfaceContent::Method(ast::Method{
+                annotation: None, name: "resetHistory".to_string(), fire_and_forget:true, selector: None,
+                in_args: Vec::new(), out_args: Vec::new(), error: None }))));
+        assert_eq!(parse_method("method setStrength { in { Strength s } }"),
+            Ok(("", InterfaceContent::Method(ast::Method{
+                annotation: None, name: "setStrength".to_string(), fire_and_forget: false, selector: None,
+                out_args: Vec::new(), error: None, in_args: vec![
+                    ast::Argument{annotation: None, name: "s".to_string(), type_ref: ast::TypeRef::Derived("Strength".to_string()), array: false}
+                ]
+        }))));
+        assert_eq!(parse_method("method getCount { out { UInt32 counter } }"),
+            Ok(("", InterfaceContent::Method(ast::Method{
+                annotation: None, name: "getCount".to_string(), fire_and_forget: false, selector: None,
+                in_args: Vec::new(), error: None, out_args: vec![
+                    ast::Argument{annotation: None, name: "counter".to_string(), type_ref: ast::TypeRef::UInt32, array: false}
+        ]}))));
+        assert_eq!(parse_method("method callable { in { Int8 a Int32 b } out { String[] r } error ErrorTypes }"),
+            Ok(("", InterfaceContent::Method(ast::Method{annotation: None, name: "callable".to_string(),
+                fire_and_forget: false, selector: None,
+                in_args: vec![
+                    ast::Argument{annotation: None, name: "a".to_string(), array: false, type_ref: ast::TypeRef::Int8},
+                    ast::Argument{annotation: None, name: "b".to_string(), array: false, type_ref: ast::TypeRef::Int32},
+                ],
+                out_args: vec![
+                    ast::Argument{annotation: None, name: "r".to_string(), array: true, type_ref: ast::TypeRef::String}
+                ],
+                error: Some(ast::MethodErrorSpec::Reference {annotation: None, fqn: "ErrorTypes".to_string()})
+            }))));
+    }
 
     #[test]
     fn test_broadcast() {

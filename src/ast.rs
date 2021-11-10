@@ -51,6 +51,9 @@ pub struct Interface {
 
     /// broadcasts defined within this interface
     pub broadcasts: Vec<Broadcast>,
+
+    /// methods defined within this interface
+    pub methods: Vec<Method>,
 }
 
 /// Type reference that may reference a custom (derived) type by its name or FQN
@@ -110,13 +113,31 @@ pub struct Field {
     pub array: bool,
 }
 
-///FArgument: (comment=FAnnotationBlock)? type=FTypeRef (array?='[' ']')? name=ID;
+/// FArgument: (comment=FAnnotationBlock)? type=FTypeRef (array?='[' ']')? name=ID;
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Argument {
     pub annotation: Option<String>,
     pub type_ref: TypeRef,
     pub array: bool,
     pub name: String,
+}
+
+///
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Method {
+    pub annotation: Option<String>,
+    pub name: String,
+    pub selector: Option<String>,
+    pub fire_and_forget: bool,
+    pub in_args: Vec<Argument>,
+    pub out_args: Vec<Argument>,
+    pub error: Option<MethodErrorSpec>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum MethodErrorSpec {
+    Reference{annotation: Option<String>, fqn: String},
+    EnumerationBody{annotation: Option<String>, extends: Option<TypeRef>, enumerators: Vec<Enumerator>}
 }
 
 /// FEnumerator returns FEnumerator:
