@@ -21,10 +21,8 @@ use super::ast;
 
 /// 'package' name=FQN
 fn parse_package(input: &str) -> IResult<&str, String> {
-    match tuple((multispace0, keyword("package"), multispace0, parse_fqn, multispace0))(input) {
-        Ok((rem, (_ws1, _tag, _ws2, fqn, _))) => Ok((rem, fqn)),
-        Err(err) => Err(err),
-    }
+    let (r, v) = tuple((keyword("package"), parse_fqn, multispace0))(input)?;
+    Ok((r, v.1.to_string()))
 }
 
 /// Parse string for a FRANCA identifier which is an XTEXT ID token.
@@ -71,11 +69,8 @@ fn parse_fqn(input: &str) -> IResult<&str, String> {
 }
 
 fn parse_import_model(input: &str) -> IResult<&str, ast::Import> {
-    let (r, v) = tuple(
-        (multispace0, keyword("import"), multispace1, tag("model"),
-         multispace1, parse_string,
-        ))(input)?;
-    Ok((r, ast::Import{ uri: v.5.to_string(), namespace: "".to_string()}))
+    let (r, v) = tuple(( keyword("import"),  keyword("model"), parse_string ))(input)?;
+    Ok((r, ast::Import{ uri: v.2.to_string(), namespace: "".to_string()}))
 }
 
 fn parse_imported_fqn(input: &str) -> IResult<&str, String> {
@@ -90,10 +85,9 @@ fn parse_imported_fqn(input: &str) -> IResult<&str, String> {
 
 fn parse_import_from(input: &str) -> IResult<&str, ast::Import> {
     let (r, v) = tuple((
-        multispace0, keyword("import"), multispace1, parse_imported_fqn, multispace1,
-        keyword("from"), multispace1, parse_string,
+        keyword("import"), parse_imported_fqn, keyword("from"), parse_string,
     ))(input)?;
-    Ok((r, ast::Import{ uri: v.7.to_string(), namespace: v.3}))
+    Ok((r, ast::Import{ uri: v.3.to_string(), namespace: v.1}))
 }
 
 fn parse_import(input: &str) -> IResult<&str, ast::Import> {
@@ -110,10 +104,10 @@ fn parse_annotation(input: &str) -> IResult<&str, Option<String>> {
 
 fn parse_version(input: &str) -> IResult<&str, Option<(u32, u32)>> {
     match nom::sequence::tuple((
-        keyword("version"), multispace0, tag("{"), multispace0, keyword("major"), multispace1, digit1,
-        multispace1, keyword("minor"), multispace1, digit1, multispace0, tag("}"), multispace0
-    ))(input) as IResult<&str, (&str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str, &str)>  {
-        Ok((r, v)) => Ok((r, Some(( v.6.parse::<u32>().unwrap(), v.10.parse::<u32>().unwrap())))),
+        keyword("version"), tag("{"), keyword("major"), digit1, multispace1,
+        keyword("minor"), digit1, multispace0, tag("}"), multispace0
+    ))(input) as IResult<&str, (&str, &str, &str, &str, &str, &str, &str, &str, &str, &str)>  {
+        Ok((r, v)) => Ok((r, Some(( v.3.parse::<u32>().unwrap(), v.6.parse::<u32>().unwrap())))),
         Err(_) => Ok((input, None))
     }
 }
@@ -165,10 +159,9 @@ fn parse_array_specifier(input: &str) -> IResult<&str, bool> {
 fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
     let (r, v) = tuple((
         multispace0,
-        parse_annotation, keyword("attribute"), multispace0, parse_type_ref, multispace0,
-        parse_array_specifier, multispace0,
+        parse_annotation, keyword("attribute"), parse_type_ref, multispace0, parse_array_specifier, multispace0,
         parse_identifier, multispace0,
-        fold_many0( alt((keyword("readonly"), keyword("noRead"), keyword("noSubscription"), multispace1 )),
+        fold_many0( alt((keyword("readonly"), keyword("noRead"), keyword("noSubscription") )),
             || (false, false, false), |mut sp, v| {
                 // println!("sp {:?} ({})", sp, v);
                 match v {
@@ -182,13 +175,13 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
             } ), multispace0
     ))(input)?;
     Ok((r, InterfaceContent::Attribute(ast::Attribute {
-        annotation: v.1, name: v.8.to_string(), array: v.6, type_ref: v.4,
-        read_only: v.10.0, no_subscription: v.10.2, no_read: v.10.1 })))
+        annotation: v.1, name: v.7.to_string(), array: v.5, type_ref: v.3,
+        read_only: v.9.0, no_subscription: v.9.2, no_read: v.9.1 })))
 }
 
 fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
     let (r, v) = nom::sequence::tuple((
-        parse_annotation, keyword("interface"), multispace1, parse_identifier, multispace0,
+        parse_annotation, keyword("interface"), parse_identifier, multispace0,
         // todo extends and manages
         tag("{"), multispace0, parse_version, multispace0,
         fold_many0( alt((parse_attribute, parse_type_interf, parse_broadcast, parse_method)),
@@ -205,21 +198,21 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
         multispace0, tag("}"), multispace0
     ))(input)?;
     Ok((r, ModuleContent::Interface(
-        ast::Interface{ annotation: v.0, name: v.3.to_string(), version: v.7, attributes: v.9.0,
-            types: v.9.1, broadcasts: v.9.2, methods: v.9.3})))
+        ast::Interface{ annotation: v.0, name: v.2.to_string(), version: v.6, attributes: v.8.0,
+            types: v.8.1, broadcasts: v.8.2, methods: v.8.3})))
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {
     let (r, v) = nom::sequence::tuple((
-        parse_annotation, keyword("typeCollection"), multispace0,
+        parse_annotation, keyword("typeCollection"),
         option(parse_identifier), multispace0, tag("{"), multispace0, parse_version, multispace0,
         fold_many0(parse_type, || Vec::new(),
         |mut vec, item| { vec.push(item); vec }),
         multispace0, tag("}"), multispace0)
     )(input)?;
-    let name = if let Some(str_name) = v.3 { Some(str_name.to_string())} else {None};
+    let name = if let Some(str_name) = v.2 { Some(str_name.to_string())} else {None};
     Ok((r, ModuleContent::TypeCollection(
-        ast:: TypeCollection{ annotation: v.0, name, version: v.7, types: v.9 })))
+        ast:: TypeCollection{ annotation: v.0, name, version: v.6, types: v.8 })))
 }
 
 pub fn parse_module(input: &str) -> IResult<&str, ast::Module> {
@@ -262,63 +255,60 @@ fn parse_argument(input: &str) -> IResult<&str, ast::Argument> {
 
 fn parse_typedef(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
-        parse_annotation, option(keyword("public")), multispace0, keyword("typedef"), multispace0,
-        parse_identifier, multispace0, keyword("is"), multispace0, parse_type_ref, multispace0,
+        parse_annotation, option(keyword("public")), keyword("typedef"),
+        parse_identifier, keyword("is"), parse_type_ref, multispace0,
         parse_array_specifier, multispace0
     ))(input)?;
-    Ok((r, ast::Type::TypeDef { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
-        actual_type: v.9, array: v.11 }))
+    Ok((r, ast::Type::TypeDef { annotation: v.0, public: v.1.is_some(), name: v.3.to_string(),
+        actual_type: v.5, array: v.7 }))
 }
 
 fn parse_array_type(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
-        parse_annotation, option(keyword("public")), multispace0, keyword("array"), multispace1,
-        parse_identifier, multispace0, keyword("of"), multispace0, parse_type_ref, multispace0
+        parse_annotation, option(keyword("public")), keyword("array"),
+        parse_identifier, keyword("of"), parse_type_ref, multispace0
     ))(input)?;
-    Ok((r, ast::Type::Array { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
-        element_type: v.9 }))
+    Ok((r, ast::Type::Array { annotation: v.0, public: v.1.is_some(), name: v.3.to_string(),
+        element_type: v.5 }))
 }
 
 fn parse_struct_type(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
-        parse_annotation, option(keyword("public")), multispace0, keyword("struct"), multispace1,
-        parse_identifier, multispace0,
+        parse_annotation, option(keyword("public")), keyword("struct"), parse_identifier, multispace0,
         option( tuple((keyword("extends"), multispace0, parse_fqn))), multispace0,
-        option(keyword("polymorphic")), multispace0,
-        tag("{"), multispace0,
+        option(keyword("polymorphic")), tag("{"), multispace0,
         fold_many0(parse_field, || Vec::new(),
             |mut vec, field | { vec.push(field); vec}),
         tag("}"), multispace0
     ))(input)?;
-    let extend_fqn = if let Some(ex) = v.7 { Some(ex.2) } else { None };
+    let extend_fqn = if let Some(ex) = v.5 { Some(ex.2) } else { None };
     Ok((r, ast::Type::Struct {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), polymorphic: v.9.is_some(),
-        extends: extend_fqn, fields: v.13 }))
+        annotation: v.0, public: v.1.is_some(), name: v.3.to_string(), polymorphic: v.7.is_some(),
+        extends: extend_fqn, fields: v.10 }))
 }
 
 fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple ((
-        parse_annotation, option(keyword("public")), multispace0, keyword("union"), multispace1,
-        parse_identifier, multispace0,
+        parse_annotation, option(keyword("public")), keyword("union"), parse_identifier, multispace0,
         option(tuple((keyword("extends"), multispace0, parse_fqn))), multispace0,
         tag("{"), multispace0,
         fold_many0(parse_field, || Vec::new(),
                    |mut vec, field | { vec.push(field); vec}),
         tag("}"), multispace0
     ))(input)?;
-    let base = if let Some(ex) = v.7 { Some(ex.2) } else { None };
-    Ok((r, ast::Type::Union { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
-        base_type: base, fields: v.11 }))
+    let base = if let Some(ex) = v.5 { Some(ex.2) } else { None };
+    Ok((r, ast::Type::Union { annotation: v.0, public: v.1.is_some(), name: v.3.to_string(),
+        base_type: base, fields: v.9 }))
 }
 
 fn parse_map_type(input: &str) -> IResult<&str, ast::Type> {
     let (r, v) = tuple((
-        parse_annotation, option(keyword("public")), multispace0, keyword("map"), multispace1,
-        parse_identifier, multispace0, tag("{"), multispace0, parse_type_ref, multispace0,
-        keyword("to"), multispace0, parse_type_ref, multispace0, tag("}"), multispace0
+        parse_annotation, option(keyword("public")), keyword("map"),
+        parse_identifier, multispace0, tag("{"), multispace0, parse_type_ref,
+        keyword("to"), parse_type_ref, multispace0, tag("}"), multispace0
     ))(input)?;
-    Ok((r, ast::Type::Map { annotation: v.0, public: v.1.is_some(), name: v.5.to_string(),
-        key_type: v.9, value_type: v.13 }))
+    Ok((r, ast::Type::Map { annotation: v.0, public: v.1.is_some(), name: v.3.to_string(),
+        key_type: v.7, value_type: v.9 }))
 }
 
 fn parse_integer_decimal(input: &str) -> IResult<&str, u64> {
@@ -352,59 +342,62 @@ fn parse_enumerator(input: &str) -> IResult<&str, ast::Enumerator> {
 }
 
 fn parse_enumeration(input: &str) -> IResult<&str, ast::Type> {
-    let (r, v) = tuple((parse_annotation, option(keyword("public")),  multispace0,
-        keyword("enumeration"), multispace1, parse_identifier, multispace0,
-        option(tuple((keyword("extends"), multispace0, parse_type_ref))), multispace0, tag("{"), multispace0,
+    let (r, v) = tuple((
+        parse_annotation, option(keyword("public")), keyword("enumeration"),
+        parse_identifier, multispace0,
+        option(tuple((keyword("extends"), multispace0, parse_type_ref))), multispace0,
+        tag("{"), multispace0,
         fold_many1( tuple((parse_enumerator, option(tag(","))) ) , || Vec::new(),
             |mut vec, item| {
                 vec.push(item.0);
                 vec }),
         multispace0, tag("}"), multispace0
     ))(input)?;
-    let extension = if let Some(ex) = v.7 {Some(ex.2)} else {None};
+    let extension = if let Some(ex) = v.5 {Some(ex.2)} else {None};
     Ok((r, ast::Type::Enumeration {
-        annotation: v.0, public: v.1.is_some(), name: v.5.to_string(), base_type: extension,
-        enumerators: v.11 }))
+        annotation: v.0, public: v.1.is_some(), name: v.3.to_string(), base_type: extension,
+        enumerators: v.9 }))
 }
 
 fn parse_error_enum_body(input: &str) -> IResult<&str, ast::MethodErrorSpec> {
     let (r, v) = tuple((
-        parse_annotation, multispace0, keyword("error"), multispace1,
-        option(tuple((keyword("extends"), multispace0, parse_type_ref))), multispace0, tag("{"), multispace0,
+        parse_annotation, keyword("error"),
+        option(tuple((keyword("extends"), multispace0, parse_type_ref))), multispace0,
+        tag("{"), multispace0,
         fold_many1( tuple((parse_enumerator, option(tag(","))) ) , || Vec::new(),
                     |mut vec, item| {
                         vec.push(item.0);
                         vec }),
         multispace0, tag("}"), multispace0
     ))(input)?;
-    let extension = if let Some(ex) = v.4 {Some(ex.2)} else {None};
+    let extension = if let Some(ex) = v.2 {Some(ex.2)} else {None};
     Ok((r, ast::MethodErrorSpec::EnumerationBody { annotation: v.0, extends: extension,
-        enumerators: v.8}))
+        enumerators: v.6 }))
 }
 
 fn parse_error_ref(input: &str) -> IResult<&str, ast::MethodErrorSpec> {
-    let (r, v) = tuple(( parse_annotation, multispace0, keyword("error"), multispace1, parse_fqn,
-                         multispace0))(input)?;
-    Ok((r, ast::MethodErrorSpec::Reference {annotation: v.0, fqn: v.4.to_string() }))
+    let (r, v) = tuple((
+        parse_annotation, keyword("error"), parse_fqn, multispace0))(input)?;
+    Ok((r, ast::MethodErrorSpec::Reference {annotation: v.0, fqn: v.2.to_string() }))
 }
 
 fn parse_method(input: &str) -> IResult<&str, InterfaceContent> {
     let (r, v) = tuple((
-        parse_annotation, multispace0, keyword("method"), multispace1, parse_identifier, multispace0,
+        parse_annotation, keyword("method"), parse_identifier, multispace0,
         option(tuple(( tag(":"), multispace0, parse_identifier))), multispace0,
-        option(keyword("fireAndForget")), multispace0, tag("{"), multispace0,
-        option(tuple ((keyword("in"), multispace0, tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
-        option(tuple ((keyword("out"), multispace0, tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
+        option(keyword("fireAndForget")), tag("{"), multispace0,
+        option(tuple ((keyword("in"), tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
+        option(tuple ((keyword("out"), tag("{"), multispace0, parse_argument_list, multispace0, tag("}"), multispace0))),
         option(alt((parse_error_ref, parse_error_enum_body))),
         multispace0, tag("}"), multispace0
     ))(input)?;
-    let slctr = if let Some(s) = v.6 { Some(s.2.to_string()) } else { None };
-    let in_args = if let Some(ag) = v.12 { ag.4 } else { Vec::new() };
-    let out_args = if let Some(ag) = v.13 { ag.4 } else { Vec::new() };
+    let slctr = if let Some(s) = v.4 { Some(s.2.to_string()) } else { None };
+    let in_args = if let Some(ag) = v.9 { ag.3 } else { Vec::new() };
+    let out_args = if let Some(ag) = v.10 { ag.3 } else { Vec::new() };
 
     Ok((r, InterfaceContent::Method( ast::Method {
-        annotation: v.0, name: v.4.to_string(), selector: slctr, fire_and_forget: v.8.is_some(),
-        in_args, out_args, error: v.14 })))
+        annotation: v.0, name: v.2.to_string(), selector: slctr, fire_and_forget: v.6.is_some(),
+        in_args, out_args, error: v.11 })))
 }
 
 fn parse_type(input: &str) ->  IResult<&str, ast::Type> {
@@ -728,6 +721,6 @@ mod test {
     #[test]
     fn test_package_nok() {
         assert_eq!(parse_package("  ackage    my.package"),
-                   Err(nom::Err::Error(nom::error::Error::new("ackage    my.package", nom::error::ErrorKind::Verify))));
+                   Err(nom::Err::Error(nom::error::Error::new("  ackage    my.package", nom::error::ErrorKind::Verify))));
     }
 }
