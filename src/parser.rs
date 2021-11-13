@@ -6,7 +6,7 @@
 
 use nom::{
     IResult,
-    combinator::{recognize},
+    combinator::{recognize, value},
     sequence::{tuple, pair},
     branch::{alt},
     bytes::complete::{tag, take_while, take, take_until, take_while1},
@@ -16,6 +16,7 @@ use nom::{
 };
 use super::util::{option, keyword};
 use std::str::FromStr;
+use nom::sequence::terminated;
 
 use super::ast;
 
@@ -26,15 +27,13 @@ fn parse_package(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse string for a FRANCA identifier which is an XTEXT ID token.
-/// XTEXT:
-///  terminal ID: ('^')?('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*;
+/// XTEXT: terminal ID: ('^')?('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*;
 fn parse_identifier(input: &str) -> IResult<&str, &str> {
     recognize(
         pair(
             alt((alpha1, tag("_"), tag("^"))),
             many0(alt((alphanumeric1, tag("_"))))
-        )
-    )(input)
+        ))(input)
 }
 
 fn quoted_string(c: char) -> impl Fn(&str) -> nom::IResult<&str, String> {
@@ -59,21 +58,17 @@ fn parse_import_model(input: &str) -> IResult<&str, ast::Import> {
     Ok((r, ast::Import{ uri: v.2.to_string(), namespace: "".to_string()}))
 }
 
-fn parse_imported_fqn(input: &str) -> IResult<&str, String> {
-    let (r, v) = pair(parse_fqn, option( tag(".*")))(input)?;
-    if v.1.is_none() {
-        Ok((r, v.0.to_string()))
-    }
-    else {
-        Ok((r, format!("{}.*", v.0)))
-    }
+fn parse_imported_fqn(input: &str) -> IResult<&str, &str> {
+    terminated(
+        recognize(pair(parse_fqn, option( tag(".*")))),
+        multispace0)(input)
 }
 
 fn parse_import_from(input: &str) -> IResult<&str, ast::Import> {
     let (r, v) = tuple((
         keyword("import"), parse_imported_fqn, keyword("from"), parse_string,
     ))(input)?;
-    Ok((r, ast::Import{ uri: v.3.to_string(), namespace: v.1}))
+    Ok((r, ast::Import{ uri: v.3.to_string(), namespace: v.1.to_string()}))
 }
 
 fn parse_import(input: &str) -> IResult<&str, ast::Import> {
@@ -683,6 +678,12 @@ mod test {
                    Err(nom::Err::Error(nom::error::Error::new("9invalid with number", nom::error::ErrorKind::Tag))));
         assert_eq!(parse_identifier("!ui ui"),
                    Err(nom::Err::Error(nom::error::Error::new("!ui ui", nom::error::ErrorKind::Tag))));
+    }
+
+    #[test]
+    fn test_imported_fqn() {
+        assert_eq!(parse_imported_fqn("ac.b.de  "), Ok(("", "ac.b.de")));
+        assert_eq!(parse_imported_fqn("_a.cde.zd1.* "), Ok(("", "_a.cde.zd1.*")));
     }
 
     #[test]
