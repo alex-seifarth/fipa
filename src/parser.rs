@@ -6,15 +6,15 @@
 
 use nom::{
     IResult,
+    combinator::{recognize},
     sequence::{tuple, pair},
     branch::{alt},
     bytes::complete::{tag, take_while, take, take_until, take_while1},
-    character::complete::{multispace0, multispace1, char, digit1, hex_digit1},
+    character::complete::{multispace0, multispace1, char, digit1, hex_digit1, alpha1,
+                        alphanumeric1},
     multi::{fold_many0, fold_many1, many0}
 };
 use super::util::{option, keyword};
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::str::FromStr;
 
 use super::ast;
@@ -29,15 +29,12 @@ fn parse_package(input: &str) -> IResult<&str, String> {
 /// XTEXT:
 ///  terminal ID: ('^')?('a'..'z'|'A'..'Z'|'_') ('a'..'z'|'A'..'Z'|'_'|'0'..'9')*;
 fn parse_identifier(input: &str) -> IResult<&str, &str> {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^(\^)?[a-zA-Z_][a-zA-Z0-9_]*").unwrap();
-    }
-    match RE.find(input) {
-        None => Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::RegexpMatch))),
-        Some(reg_match) => {
-            Ok((&input[reg_match.end()..], &input[reg_match.start()..reg_match.end()]))
-        }
-    }
+    recognize(
+        pair(
+            alt((alpha1, tag("_"), tag("^"))),
+            many0(alt((alphanumeric1, tag("_"))))
+        )
+    )(input)
 }
 
 fn quoted_string(c: char) -> impl Fn(&str) -> nom::IResult<&str, String> {
@@ -53,19 +50,8 @@ fn parse_string(input: &str) -> IResult<&str, String> {
     nom::branch::alt((quoted_string('"'), quoted_string('\'') ))(input)
 }
 
-fn parse_fqn(input: &str) -> IResult<&str, String> {
-    match nom::sequence::pair(parse_identifier,
-                              many0(pair(tag("."), parse_identifier))
-    )(input) {
-        Err(err) => Err(err),
-        Ok((rem, fqn)) => {
-            let mut fqn_vec = vec![fqn.0];
-            for comp in fqn.1 {
-                fqn_vec.push(comp.1);
-            }
-            Ok((rem, fqn_vec.join(".")))
-        }
-    }
+fn parse_fqn(input: &str) -> IResult<&str, &str> {
+    recognize(pair( parse_identifier, many0( pair(tag("."), parse_identifier) ))) (input)
 }
 
 fn parse_import_model(input: &str) -> IResult<&str, ast::Import> {
@@ -130,7 +116,7 @@ enum InterfaceContent {
 fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
     // todo IntegerInterval not recognized
     let (r, v) = parse_fqn(input)?;
-    let tr = match v.as_str() {
+    let tr = match v {
         "undefined" => ast::TypeRef::Undefined,
         "Int8" => ast::TypeRef::Int8,
         "UInt8" => ast::TypeRef::UInt8,
@@ -145,7 +131,7 @@ fn parse_type_ref(input: &str) -> IResult<&str, ast::TypeRef> {
         "Float" => ast::TypeRef::Float,
         "Double" => ast::TypeRef::Double,
         "ByteBuffer" => ast::TypeRef::ByteBuffer,
-        _ => ast::TypeRef::Derived(v),
+        _ => ast::TypeRef::Derived(v.to_string()),
     };
     Ok((r, tr))
 }
@@ -175,8 +161,8 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
             } ), multispace0
     ))(input)?;
     Ok((r, InterfaceContent::Attribute(ast::Attribute {
-        annotation: v.1, name: v.7.to_string(), array: v.5, type_ref: v.3,
-        read_only: v.9.0, no_subscription: v.9.2, no_read: v.9.1 })))
+        annotation: v.1, name: v.7.to_string(), array: v.5, type_ref: v.3, read_only: v.9.0,
+        no_subscription: v.9.2, no_read: v.9.1 })))
 }
 
 fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
@@ -281,7 +267,7 @@ fn parse_struct_type(input: &str) -> IResult<&str, ast::Type> {
             |mut vec, field | { vec.push(field); vec}),
         tag("}"), multispace0
     ))(input)?;
-    let extend_fqn = if let Some(ex) = v.5 { Some(ex.2) } else { None };
+    let extend_fqn = if let Some(ex) = v.5 { Some(ex.2.to_string()) } else { None };
     Ok((r, ast::Type::Struct {
         annotation: v.0, public: v.1.is_some(), name: v.3.to_string(), polymorphic: v.7.is_some(),
         extends: extend_fqn, fields: v.10 }))
@@ -296,7 +282,7 @@ fn parse_union_type(input: &str) -> IResult<&str, ast::Type> {
                    |mut vec, field | { vec.push(field); vec}),
         tag("}"), multispace0
     ))(input)?;
-    let base = if let Some(ex) = v.5 { Some(ex.2) } else { None };
+    let base = if let Some(ex) = v.5 { Some(ex.2.to_string()) } else { None };
     Ok((r, ast::Type::Union { annotation: v.0, public: v.1.is_some(), name: v.3.to_string(),
         base_type: base, fields: v.9 }))
 }
@@ -692,24 +678,24 @@ mod test {
     #[test]
     fn test_identifier_nok() {
         assert_eq!(parse_identifier(" aSimpleIdentifier"),
-                   Err(nom::Err::Error(nom::error::Error::new(" aSimpleIdentifier", nom::error::ErrorKind::RegexpMatch))));
+                   Err(nom::Err::Error(nom::error::Error::new(" aSimpleIdentifier", nom::error::ErrorKind::Tag))));
         assert_eq!(parse_identifier("9invalid with number"),
-                   Err(nom::Err::Error(nom::error::Error::new("9invalid with number", nom::error::ErrorKind::RegexpMatch))));
+                   Err(nom::Err::Error(nom::error::Error::new("9invalid with number", nom::error::ErrorKind::Tag))));
         assert_eq!(parse_identifier("!ui ui"),
-                   Err(nom::Err::Error(nom::error::Error::new("!ui ui", nom::error::ErrorKind::RegexpMatch))));
+                   Err(nom::Err::Error(nom::error::Error::new("!ui ui", nom::error::ErrorKind::Tag))));
     }
 
     #[test]
     fn test_fqn_ok() {
-        assert_eq!(parse_fqn("acad.ad09_.ab"), Ok(("", "acad.ad09_.ab".to_string())));
-        assert_eq!(parse_fqn("_903.xaf.Ab9.__holla therest"), Ok((" therest", "_903.xaf.Ab9.__holla".to_string())));
-        assert_eq!(parse_fqn("_903 xaf.Ab9.__holla therest"), Ok((" xaf.Ab9.__holla therest", "_903".to_string())));
+        assert_eq!(parse_fqn("acad.ad09_.ab"), Ok(("", "acad.ad09_.ab")));
+        assert_eq!(parse_fqn("_903.xaf.Ab9.__holla therest"), Ok((" therest", "_903.xaf.Ab9.__holla")));
+        assert_eq!(parse_fqn("_903 xaf.Ab9.__holla therest"), Ok((" xaf.Ab9.__holla therest", "_903")));
     }
 
     #[test]
     fn test_fqn_nok() {
         assert_eq!(parse_fqn("0acad.ad09_.ab"),
-                   Err(nom::Err::Error(nom::error::Error::new("0acad.ad09_.ab", nom::error::ErrorKind::RegexpMatch))));
+                   Err(nom::Err::Error(nom::error::Error::new("0acad.ad09_.ab", nom::error::ErrorKind::Tag))));
     }
 
     #[test]
