@@ -1,0 +1,10 @@
+package de.titnc.services
+
+import de.titnc.common from 'Common.fidl'
+
+interface Service2{
+    version { major 2 minor 23 }
+
+
+
+}

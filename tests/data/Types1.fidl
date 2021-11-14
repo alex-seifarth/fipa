@@ -1,0 +1,17 @@
+package de.tinc.types
+
+typeCollection Engine {
+    version { major 1 minor 0}
+
+    enumeration DrivetrainType {
+        COMB_OTTO
+        COMB_DIESEL
+        MHEV_OTTO
+        MHEV_DIESEL
+        PHEV_OTTO
+        PHEV_DIESEL
+        BEV
+        FUEL_CELL_H2
+        WARP_DRIVE
+    }
+}

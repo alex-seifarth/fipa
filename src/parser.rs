@@ -6,7 +6,7 @@
 
 use nom::{
     IResult,
-    combinator::{recognize, value},
+    combinator::{recognize},
     sequence::{tuple, pair},
     branch::{alt},
     bytes::complete::{tag, take_while, take, take_until, take_while1},

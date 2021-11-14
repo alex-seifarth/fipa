@@ -1,0 +1,14 @@
+package de.tinc.common
+
+typeCollection {
+    version { major 1 minor 0}
+
+    struct EngineData {
+        UInt16 maxTorque
+        UInt16 maxPower
+
+        UInt16 actualTorque
+        UInt16 actualPower
+    }
+
+}
