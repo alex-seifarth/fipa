@@ -13,13 +13,22 @@ use std::{
 use tokio;
 use tokio::task::JoinHandle;
 
+/// Errors reported during parsing, compilation and linking of FIDL files.
 #[derive(Debug)]
 pub enum ParseError {
+    /// I/O Errors (e.g. file not found, not readable, ... )
     IoError{file: PathBuf, referenced_by: Option<PathBuf>, error: std::io::Error},
+
+    /// Error resulting from path processing (e.g. invalid path strings)
     PathError{file: PathBuf, referenced_by: Option<PathBuf>, error: std::io::Error},
+
+    /// Maximum recursion level from FIDL imports reached.
     MaxImportNestingReached{file: PathBuf, referenced_by: Option<PathBuf>},
-    AlreadyParsed{file: PathBuf, referenced_by: Option<PathBuf>},
+
+    /// File not found
     FileNotFound{file: PathBuf,  referenced_by: Option<PathBuf>},
+
+    /// Syntax error while parsing a FIDL fild
     SyntaxError{file: PathBuf,  referenced_by: Option<PathBuf>,}
 }
 
