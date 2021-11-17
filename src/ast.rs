@@ -54,6 +54,12 @@ pub struct Interface {
 
     /// methods defined within this interface
     pub methods: Vec<Method>,
+
+    /// Optional base interface identifier
+    pub extends: Option<String>,
+
+    /// Optional list of managed interface identifiers
+    pub manages: Option<Vec<String>>,
 }
 
 /// Type reference that may reference a custom (derived) type by its name or FQN

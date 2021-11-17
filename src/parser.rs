@@ -6,8 +6,8 @@
 
 use nom::{
     IResult,
-    combinator::{recognize},
-    sequence::{tuple, pair},
+    combinator::{recognize, map},
+    sequence::{tuple, pair, preceded},
     branch::{alt},
     bytes::complete::{tag, take_while, take, take_until, take_while1},
     character::complete::{multispace0, multispace1, char, digit1, hex_digit1, alpha1,
@@ -160,10 +160,19 @@ fn parse_attribute(input: &str) -> IResult<&str, InterfaceContent> {
         no_subscription: v.9.2, no_read: v.9.1 })))
 }
 
+fn parse_cs_fqn_list(input: &str) -> IResult<&str, Vec<String>> {
+    let p = fold_many0( tuple((tag(","), multispace0, parse_fqn, multispace0)), || vec!["".to_string()],
+        |mut v, item| { v.push(item.2.to_string()); v });
+
+    nom::combinator::map( tuple((parse_fqn, multispace0, p)),
+        |mut item|{ item.2[0] = item.0.to_string(); item.2}) (input)
+}
+
 fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
     let (r, v) = nom::sequence::tuple((
         parse_annotation, keyword("interface"), parse_identifier, multispace0,
-        // todo extends and manages
+        option( map(preceded(keyword("extends"), parse_fqn), |r| {r.to_string()})), multispace0,
+        option( preceded(keyword("manages"), parse_cs_fqn_list)), multispace0,
         tag("{"), multispace0, parse_version, multispace0,
         fold_many0( alt((parse_attribute, parse_type_interf, parse_broadcast, parse_method)),
                     || (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
@@ -179,8 +188,8 @@ fn parse_interface(input: &str) -> IResult<&str, ModuleContent> {
         multispace0, tag("}"), multispace0
     ))(input)?;
     Ok((r, ModuleContent::Interface(
-        ast::Interface{ annotation: v.0, name: v.2.to_string(), version: v.6, attributes: v.8.0,
-            types: v.8.1, broadcasts: v.8.2, methods: v.8.3})))
+        ast::Interface{ annotation: v.0, name: v.2.to_string(), version: v.10, attributes: v.12.0,
+            types: v.12.1, broadcasts: v.12.2, methods: v.12.3, extends: v.4, manages: v.6 })))
 }
 
 fn parse_type_collection(input: &str) -> IResult<&str, ModuleContent> {

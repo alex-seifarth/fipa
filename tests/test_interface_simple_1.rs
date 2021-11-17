@@ -28,7 +28,7 @@ fn test_interface_simple_1a() {
     assert_eq!(module.imports[1].uri, "a-very-nice-model");
 
     // interface
-    assert_eq!(module.interfaces.len(), 2);
+    assert_eq!(module.interfaces.len(), 3);
 
     // MyInterface
     let my_interface = &module.interfaces[0];
@@ -71,6 +71,7 @@ fn test_interface_simple_1a() {
     assert_eq!(vehicle_status.version, Some((2, 1)));
     assert_eq!(vehicle_status.attributes.len(), 1);
     assert_eq!(vehicle_status.types.len(), 2);
+    assert_eq!(vehicle_status.extends, Some("VehicleBase".to_string()));
 
     assert_eq!(vehicle_status.attributes[0], fipa::ast::Attribute{
         annotation: None, name: "actualFesMode".to_string(), array: false, read_only: true,
@@ -107,4 +108,12 @@ fn test_interface_simple_1a() {
         ],
         out_args: Vec::new(), error: None
     });
+
+    // DeviceManager
+    let device_mgr = &module.interfaces[2];
+    assert!(device_mgr.annotation.is_none());
+    assert_eq!(device_mgr.name, "DeviceManager");
+    assert_eq!(device_mgr.version, None);
+    assert_eq!(device_mgr.extends, None);
+    assert_eq!(device_mgr.manages, Some(vec!["Phone".to_string(), "de.titnc.Tablet".to_string()]));
 }
