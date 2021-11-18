@@ -39,15 +39,19 @@ pub enum ParseError {
 /// * `fidls`:        List of FRANCA IDL (.fidl) files to parse
 /// * `search_dirs`:  List of directories used to search for imported FRANCA FIDL files.
 /// * `max_import_nesting`: Maximum depth of import file nesting.
-pub async fn compile_fidls(fidls: &Vec<PathBuf>, search_dirs: &Vec<PathBuf>, max_import_nesting: usize)
-                           ->  (Vec<(ast::Module, PathBuf)>, Vec<ParseError>)  {
+/// * `follow_imports`:  If `true` the imports of each found FIDL file are searched and parsed too.
+pub async fn parse_fidls(fidls: &Vec<PathBuf>,
+                         search_dirs: &Vec<PathBuf>,
+                         max_import_nesting: usize,
+                         follow_imports: bool)
+                         ->  (Vec<(ast::Module, PathBuf)>, Vec<ParseError>)  {
     let module_list = Arc::new(Mutex::new(Vec::new()));
     let mut jhs = Vec::new();
     for f in fidls {
         let modules_clone = module_list.clone();
         let jh = tokio::spawn(
             parse_single_fidl(f.clone(), None,modules_clone,
-                              search_dirs.clone(), max_import_nesting)
+                              search_dirs.clone(), max_import_nesting, follow_imports)
         );
         jhs.push(jh);
     }
@@ -70,7 +74,8 @@ pub async fn parse_single_fidl(filepath: PathBuf,
                                referenced_by: Option<PathBuf>,
                                mod_list: Arc<Mutex<Vec<PathBuf>>>,
                                search_dirs: Vec<PathBuf>,
-                               max_nesting: usize)
+                               max_nesting: usize,
+                               follow_imports: bool)
         -> Vec<Result<(ast::Module, PathBuf), ParseError>>
 {
     use std::fs;
@@ -101,36 +106,41 @@ pub async fn parse_single_fidl(filepath: PathBuf,
         return vec![Err(ParseError::MaxImportNestingReached {file: file.to_path_buf(), referenced_by})];
     }
 
-    let mut jhs = Vec::new();
-    let current_dir = filepath.parent();
-    for imp in module.imports.iter().filter(|i| !i.uri.is_empty()) {
-        let referenced_by = file.clone();
-        let ml = mod_list.clone();
-        let import_file = find_file(&imp.uri, current_dir, &search_dirs);
-        if let Some(f) = import_file {
-            let jh = spawn(f, Some(referenced_by), ml,
-                           search_dirs.clone(), max_nesting -1);
-            jhs.push(jh);
+    if follow_imports {
+        let mut jhs = Vec::new();
+        let current_dir = filepath.parent();
+        for imp in module.imports.iter().filter(|i| !i.uri.is_empty()) {
+            let referenced_by = file.clone();
+            let ml = mod_list.clone();
+            let import_file = find_file(&imp.uri, current_dir, &search_dirs);
+            if let Some(f) = import_file {
+                let jh = spawn(f, Some(referenced_by), ml,
+                               search_dirs.clone(), max_nesting - 1, follow_imports);
+                jhs.push(jh);
+            } else {
+                return vec![Err(ParseError::FileNotFound { file: Path::new(&imp.uri).to_path_buf(), referenced_by: Some(file) })]
+            }
         }
-        else {
-            return vec![Err(ParseError::FileNotFound {file: Path::new(&imp.uri).to_path_buf(), referenced_by: Some(file) })]
-        }
-    }
 
-    let mut result = vec![Ok((module, file.to_path_buf()))];
-    for jh in jhs {
-        let mut r = jh.await.unwrap();
-        result.append(&mut r);
+        let mut result = vec![Ok((module, file.to_path_buf()))];
+        for jh in jhs {
+            let mut r = jh.await.unwrap();
+            result.append(&mut r);
+        }
+        result
     }
-    result
+    else {
+        vec![Ok((module, file.to_path_buf()))]
+    }
 }
 
 fn spawn(filepath: PathBuf, referenced_by: Option<PathBuf>, mod_list: Arc<Mutex<Vec<PathBuf>>>,
-    search_dirs: Vec<PathBuf>, max_nesting: usize)
+    search_dirs: Vec<PathBuf>, max_nesting: usize, follow_imports: bool)
         -> JoinHandle<Vec<Result<(ast::Module, PathBuf), ParseError>>>
 {
     tokio::spawn(async move {
-        parse_single_fidl(filepath, referenced_by, mod_list, search_dirs, max_nesting -1).await
+        parse_single_fidl(filepath, referenced_by, mod_list, search_dirs,
+                          max_nesting -1, follow_imports).await
     })
 }
 

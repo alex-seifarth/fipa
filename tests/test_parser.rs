@@ -15,7 +15,8 @@ async fn test_parser() {
     let search_dir = vec![d.join("common")];
     let max_import_nesting = 256usize;
 
-    let (modules, errors) = fipa::compiler::compile_fidls(&fidls, &search_dir, max_import_nesting).await;
+    let (modules, errors) =
+        fipa::compiler::parse_fidls(&fidls, &search_dir, max_import_nesting, true).await;
     assert!(errors.is_empty());
     assert_eq!(modules.len(), 4);
 
